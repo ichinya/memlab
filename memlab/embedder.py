@@ -26,7 +26,10 @@ import numpy as np
 
 from . import config
 
-PORT = int(os.environ.get("MEMLAB_EMBED_PORT", "8765"))
+# Above 15000 and below 49152: outside both Windows dynamic port ranges seen in practice (the
+# default 49152+, and 1024-15000 on machines with Hyper-V / WSL), where WinNAT reserves blocks of
+# 100 ports that move on every reboot. 8765 fell into such a block (8668-8767) on 2026-10-10.
+PORT = int(os.environ.get("MEMLAB_EMBED_PORT", "18765"))
 IDLE = int(os.environ.get("MEMLAB_EMBED_IDLE", "1800"))
 PROTO = 2                        # bump when requests change: clients replace an older running process
 SLICE = 256                      # texts per request: long index builds stay under any HTTP timeout
@@ -42,11 +45,20 @@ def device(torch) -> str:
     return "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu"
 
 
+def load_kwargs(model: str, cuda: bool) -> tuple[dict, dict]:
+    """(model_kwargs, config_kwargs) for SentenceTransformer. fp16 on CUDA, except EmbeddingGemma 2:
+    fp16 gives NaN there, and only its text tower is loaded (stage 15)."""
+    import torch
+    if "embeddinggemma" in model.lower():
+        return {"torch_dtype": torch.float32}, {"vision_config": None, "audio_config": None}
+    return ({"torch_dtype": torch.float16} if cuda else {}), {}
+
+
 def _load(model: str, max_len: int | None):
     import torch
     from sentence_transformers import SentenceTransformer
-    cuda = torch.cuda.is_available()
-    m = SentenceTransformer(model, device=device(torch), model_kwargs={"torch_dtype": torch.float16} if cuda else {})
+    mk, ck = load_kwargs(model, torch.cuda.is_available())
+    m = SentenceTransformer(model, device=device(torch), model_kwargs=mk, config_kwargs=ck)
     if max_len:
         m.max_seq_length = max_len
     return m
@@ -101,11 +113,29 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+def _listening(port: int) -> bool:
+    """Something accepts connections on the port. On Windows a port held by another embedder and a
+    port Windows reserved fail bind() with the same WinError 10013, so the errno can't tell them apart."""
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def run(port: int = PORT, idle: int = IDLE) -> None:
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
-    except OSError:
-        return                   # another server's embedder won the race; use that one
+    except OSError as e:
+        if _listening(port):
+            return               # another server's embedder won the race; use that one
+        # Nobody holds the port, yet bind failed: on Windows a reserved range (WinError 10013).
+        # stderr goes to logs/embedder.log; the client then names the port in its error.
+        print(f"memlab embedder: cannot bind 127.0.0.1:{port}: {e!r}. On Windows check "
+              f"`netsh int ipv4 show excludedportrange protocol=tcp`; set MEMLAB_EMBED_PORT to a "
+              f"free port in the MCP server env.", file=sys.stderr, flush=True)
+        raise SystemExit(1)
     srv.last = time.time()
 
     def watchdog():
@@ -169,7 +199,7 @@ class Client:
             if self._alive():
                 return
             time.sleep(0.5)
-        raise RuntimeError(f"memlab embedder did not start on {self.url}")
+        raise RuntimeError(f"memlab embedder did not start on {self.url}; see {log}")
 
     def _request(self, payload: dict) -> dict:
         if not self._checked:    # once per client: start the process, or replace an outdated one

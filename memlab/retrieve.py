@@ -129,10 +129,10 @@ class Dense:
         else:
             import torch
             from sentence_transformers import SentenceTransformer
-            from .embedder import device
+            from .embedder import device, load_kwargs
             cuda = torch.cuda.is_available()
-            self.model = SentenceTransformer(model, device=device(torch),
-                                             model_kwargs={"torch_dtype": torch.float16} if cuda else {})
+            mk, ck = load_kwargs(model, cuda)
+            self.model = SentenceTransformer(model, device=device(torch), model_kwargs=mk, config_kwargs=ck)
             if max_len:
                 self.model.max_seq_length = max_len
         self.query_prefix = query_prefix

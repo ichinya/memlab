@@ -43,6 +43,21 @@ def cmd_stats(args):
         print(f"  {v:6} {k}")
 
 
+def prefixes(model: str, decisions: bool) -> tuple[str, str, int | None]:
+    """(query_prefix, doc_prefix, max_len) a model needs; `decisions`: every method searches only
+    the decision channel, which EmbeddingGemma 2 asks for as a search task, not code retrieval."""
+    m = model.lower()
+    if "e5" in m:
+        return "query: ", "passage: ", None
+    if "qwen3-embedding" in m:
+        return ("Instruct: Given a description of a code change or a question about a software project, "
+                "retrieve the relevant source files and documents\nQuery: ", "", 512)
+    if "embeddinggemma" in m:
+        task = "search result" if decisions else "code retrieval"
+        return f"task: {task} | query: ", "title: none | text: ", 512
+    return "", "", None
+
+
 def cmd_eval(args):
     cfg, root, chunks = load(args.config)
     cases = json.loads(Path(args.cases or cfg["cases"]).read_text(encoding="utf-8"))
@@ -55,13 +70,10 @@ def cmd_eval(args):
 
     bm25 = retrieve.BM25([retrieve.tokenize(f"{c.path} {c.symbol} {c.text}", args.stem) for c in chunks])
     model = args.model or cfg.get("model", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    e5, qwen = "e5" in model.lower(), "qwen3-embedding" in model.lower()
-    qprefix = ("query: " if e5 else
-               "Instruct: Given a description of a code change or a question about a software project, "
-               "retrieve the relevant source files and documents\nQuery: " if qwen else "")
-    dense = retrieve.Dense(chunks, model, Path(cfg.get("cache", ".cache")), query_prefix=qprefix,
-                           doc_prefix="passage: " if e5 else "", max_len=512 if qwen else None)
     methods = args.methods.split(",")
+    qprefix, dprefix, max_len = prefixes(model, all(m.startswith("only:dec") for m in methods))
+    dense = retrieve.Dense(chunks, model, Path(cfg.get("cache", ".cache")), query_prefix=qprefix,
+                           doc_prefix=dprefix, max_len=max_len)
     gc = cfg.get("graph", {})
     graphs: dict[tuple, graph.Graph] = {}
 

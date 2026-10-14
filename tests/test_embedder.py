@@ -69,3 +69,49 @@ def test_device_prefers_cuda_then_mps_then_cpu():
     assert device(t(False, True)) == "mps"
     assert device(t(False, False)) == "cpu"
     assert device(NS(cuda=NS(is_available=lambda: False), backends=NS())) == "cpu"   # torch without MPS support
+
+
+
+def _free_port() -> int:
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def test_run_reports_a_port_it_cannot_bind(monkeypatch, capsys):
+    """WinError 10013 on a port nobody listens on: Windows reserved it (Hyper-V / WinNAT excluded
+    range). Exiting silently left clients waiting 30 s for 'did not start' and an empty log."""
+    import pytest
+
+    def denied(*_a, **_k):
+        raise PermissionError(13, "access forbidden by its access permissions")
+    monkeypatch.setattr(embedder, "ThreadingHTTPServer", denied)
+    port = _free_port()
+    with pytest.raises(SystemExit) as e:
+        embedder.run(port=port)
+    assert e.value.code == 1
+    assert str(port) in capsys.readouterr().err
+
+
+def test_run_steps_aside_when_another_embedder_holds_the_port():
+    import socket
+    with socket.socket() as other:
+        other.bind(("127.0.0.1", 0))
+        other.listen()
+        assert embedder.run(port=other.getsockname()[1]) is None
+
+
+def test_load_kwargs_keeps_fp16_for_e5_and_qwen_on_cuda():
+    import torch
+    for m in ("intfloat/multilingual-e5-small", "Qwen/Qwen3-Embedding-0.6B"):
+        assert embedder.load_kwargs(m, True) == ({"torch_dtype": torch.float16}, {})
+        assert embedder.load_kwargs(m, False) == ({}, {})
+
+
+def test_load_kwargs_gemma_is_fp32_text_only():
+    import torch
+    for cuda in (True, False):
+        mk, ck = embedder.load_kwargs("google/embeddinggemma-2", cuda)
+        assert mk == {"torch_dtype": torch.float32}
+        assert ck == {"vision_config": None, "audio_config": None}
