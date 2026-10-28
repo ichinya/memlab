@@ -8,4 +8,5 @@ out/
 logs/
 build/
 *.egg-info/
+.venv/
 .env
