@@ -188,9 +188,12 @@ python -m memlab eval    --config C --cases cases.json --methods "hybrid,only:co
 | Linux | `python:3.11-slim` container — `scripts/ci-linux.sh user@docker-host` | tests, `claude plugin validate` (plugin + mod) | 46 passed, 3 valid (2026-10-09) |
 | macOS | Codemagic `mac_mini_m2` — `codemagic.yaml`, workflow `macos-check` | tests, plugin validation, one embedding asserting Apple GPU (`mps`) | 46 passed, `device: mps` (2026-10-09) |
 
-GPU: CUDA on Windows/Linux, Apple's MPS on a Mac, the CPU otherwise; the re-ranker needs CUDA. The
-Linux and macOS checks run outside GitHub Actions: the script copies the working tree to any Docker
-host over ssh; the Codemagic workflow is started from its UI or API (`POST /builds`, workflow `macos-check`).
+GPU: CUDA on Windows/Linux, Apple's MPS on a Mac, the CPU otherwise; the re-ranker needs CUDA. GitHub
+Actions (`.github/workflows/ci.yml`) runs the tests on all three OSes and `claude plugin validate` on
+every push and PR — CPU-only PyTorch, the tests load no models — and `uv lock --check` guards the
+lockfile. The Linux script and Codemagic workflow stay as heavier alternatives: the script copies the
+working tree to any Docker host over ssh; the Codemagic workflow is started from its UI or API
+(`POST /builds`, workflow `macos-check`).
 
 ## Limits
 

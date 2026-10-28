@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lock-check:
+    name: lockfile up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.11"
+      - run: uv lock --check
+
+  tests:
+    name: pytest (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.11"
+      # CPU PyTorch only: the tests load no models, and the PyPI Linux/Windows
+      # wheels would pull the multi-GB CUDA stack for nothing.
+      - name: Install CPU PyTorch
+        run: |
+          uv venv
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install package
+        run: uv pip install -e ".[test,research]"
+      - name: Run tests
+        run: uv run --no-sync python -m pytest -q tests
+
+  plugin:
+    name: claude plugin validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g -s @anthropic-ai/claude-code
+      - run: |
+          claude plugin validate .
+          claude plugin validate .claude-plugin/plugin.json
+          claude plugin validate mods/memlab-root
