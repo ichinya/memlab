@@ -105,14 +105,28 @@ def test_mjs_chunks_like_javascript():
             "export const answer = () => 42;\n"
             "export default class Runner {}\n"
             "export async function start() { return 1; }\n")
-    js = [c.id for c in chunk_file("a.js", text)]
-    assert [c.id for c in chunk_file("a.mjs", text)] == [i.replace("a.js", "a.mjs") for i in js]
-    assert "a.js::start" in js
+    cs = chunk_file("a.mjs", text)
+    assert [(c.id, c.symbol, c.line) for c in cs] == [
+        ("a.mjs", "", 1), ("a.mjs::answer", "answer", 2),
+        ("a.mjs::Runner", "Runner", 3), ("a.mjs::start", "start", 4)]
 
 
 def test_ps1_joins_the_corpus_as_text(tmp_path):
-    from memlab.corpus import list_files
+    from memlab.corpus import CODE_EXT, TEXT_EXT, chunk_file, list_files
+    assert ".ps1" in TEXT_EXT and ".ps1" not in CODE_EXT and ".mjs" in CODE_EXT
     (tmp_path / "run.ps1").write_text("function Invoke-Task {}\n", encoding="utf-8")
     (tmp_path / "x.mjs").write_text("export const answer = () => 42;\n", encoding="utf-8")
     (tmp_path / "y.bin").write_bytes(b"\x00\x01")
-    assert list_files(tmp_path, [], [], 400_000) == ["run.ps1", "x.mjs"]
+    assert sorted(list_files(tmp_path, [], [], 400_000)) == ["run.ps1", "x.mjs"]
+    win = chunk_file("a.ps1", "para one\n\npara two\n")
+    assert len(win) == 1 and win[0].symbol == "" and win[0].id == "a.ps1"
+
+
+def test_bom_marked_files_decode_and_bad_encoding_is_skipped(tmp_path):
+    from memlab.corpus import build
+    (tmp_path / "a.ps1").write_bytes("# PowerShell\n".encode("utf-16"))
+    (tmp_path / "b.md").write_bytes("# Title\n".encode("utf-8-sig"))
+    (tmp_path / "c.txt").write_bytes(b"caf\xe9 menu")      # CP1252 bytes: not UTF-8, no BOM
+    cs = build(tmp_path, [], [], 400_000)
+    assert [(c.path, c.text.splitlines()[0]) for c in cs] == [("a.ps1", "# PowerShell"),
+                                                              ("b.md", "# Title")]

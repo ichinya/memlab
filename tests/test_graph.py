@@ -120,3 +120,24 @@ def test_mjs_imports_and_symbol_references():
     start = next(i for i, c in enumerate(chunks) if c.symbol == "start")
     helper = next(i for i, c in enumerate(chunks) if c.symbol == "Helper")
     assert helper in g.refs[start]
+
+
+def test_mjs_extensionless_and_index_imports():
+    files = {
+        "src/app.mjs": "import './util';\nimport './kit';\n",
+        "src/util.mjs": "export const u = 1\n",
+        "src/kit/index.mjs": "export const k = 1\n",
+    }
+    chunks = [c for p, t in files.items() for c in chunk_file(p, t)]
+    g = Graph(chunks)
+    assert g.file_edges["src/app.mjs"] == {"src/util.mjs", "src/kit/index.mjs"}
+
+
+def test_upper_case_mjs_suffix_still_links():
+    files = {
+        "src/Main.MJS": "import { H } from './h.mjs';\nexport function start() { return H(); }\n",
+        "src/h.mjs": "export function H() {}\n",
+    }
+    chunks = [c for p, t in files.items() for c in chunk_file(p, t)]
+    g = Graph(chunks)
+    assert g.file_edges["src/Main.MJS"] == {"src/h.mjs"}
