@@ -98,3 +98,21 @@ def test_home_and_drive_root_are_not_walked():
     from memlab.corpus import _walk
     assert _walk(Path.home()) == []
     assert _walk(Path(Path.home().anchor)) == []
+
+
+def test_mjs_chunks_like_javascript():
+    text = ("import './dep.mjs';\n"
+            "export const answer = () => 42;\n"
+            "export default class Runner {}\n"
+            "export async function start() { return 1; }\n")
+    js = [c.id for c in chunk_file("a.js", text)]
+    assert [c.id for c in chunk_file("a.mjs", text)] == [i.replace("a.js", "a.mjs") for i in js]
+    assert "a.js::start" in js
+
+
+def test_ps1_joins_the_corpus_as_text(tmp_path):
+    from memlab.corpus import list_files
+    (tmp_path / "run.ps1").write_text("function Invoke-Task {}\n", encoding="utf-8")
+    (tmp_path / "x.mjs").write_text("export const answer = () => 42;\n", encoding="utf-8")
+    (tmp_path / "y.bin").write_bytes(b"\x00\x01")
+    assert list_files(tmp_path, [], [], 400_000) == ["run.ps1", "x.mjs"]

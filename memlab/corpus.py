@@ -17,9 +17,9 @@ from pathlib import Path
 MAX_CHARS = 6000          # ~1.5k tokens; longer chunks are split into parts
 WINDOW = 3000             # window size for unstructured text
 
-CODE_EXT = {".dart", ".ts", ".tsx", ".js", ".jsx", ".py", ".kt", ".swift", ".astro"}
+CODE_EXT = {".dart", ".ts", ".tsx", ".js", ".mjs", ".jsx", ".py", ".kt", ".swift", ".astro"}
 MD_EXT = {".md", ".mdx"}
-TEXT_EXT = {".yml", ".yaml", ".json", ".sql", ".sh", ".toml", ".txt", ".html", ".css"}
+TEXT_EXT = {".yml", ".yaml", ".json", ".sql", ".sh", ".ps1", ".toml", ".txt", ".html", ".css"}
 
 # Top-level declarations (column 0). Group 1 = symbol name.
 DECL = re.compile(

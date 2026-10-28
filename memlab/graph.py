@@ -73,7 +73,7 @@ class Graph:
             targets = []
             if path.endswith(".dart"):
                 targets = IMPORT_DART.findall(text)
-            elif path.endswith((".ts", ".tsx", ".js", ".jsx", ".astro")):
+            elif path.endswith((".ts", ".tsx", ".js", ".mjs", ".jsx", ".astro")):
                 targets = IMPORT_TS.findall(text)
             elif path.endswith((".md", ".mdx")):
                 targets = MD_LINK.findall(text) + REPO_PATH.findall(text)
