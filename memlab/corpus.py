@@ -146,12 +146,14 @@ def list_files(root: Path, include: list[str], exclude: list[str], max_bytes: in
     return keep
 
 
-BOMS = ((codecs.BOM_UTF8, "utf-8-sig"), (codecs.BOM_UTF16_LE, "utf-16"), (codecs.BOM_UTF16_BE, "utf-16"))
+BOMS = ((codecs.BOM_UTF8, "utf-8-sig"), (codecs.BOM_UTF32_LE, "utf-32"), (codecs.BOM_UTF32_BE, "utf-32"),
+        (codecs.BOM_UTF16_LE, "utf-16"), (codecs.BOM_UTF16_BE, "utf-16"))
 
 
 def _read_text(path: Path) -> str | None:
-    """UTF-8, or a BOM-marked variant. Non-UTF-8 files without a BOM (e.g. CP1251 .ps1) are
-    skipped: indexing mojibake would poison retrieval."""
+    """UTF-8, or a BOM-marked variant (UTF-32 checked before UTF-16: their BOMs share a prefix).
+    Newlines are normalized like read_text() did. Non-UTF-8 files without a BOM (e.g. CP1251
+    .ps1) are skipped: indexing mojibake would poison retrieval."""
     try:
         raw = path.read_bytes()
     except OSError:                              # deleted after listing (a warm during checkout)
@@ -159,11 +161,11 @@ def _read_text(path: Path) -> str | None:
     for bom, enc in BOMS:
         if raw.startswith(bom):
             try:
-                return raw.decode(enc)
+                return raw.decode(enc).replace("\r\n", "\n").replace("\r", "\n")
             except UnicodeDecodeError:
                 return None
     try:
-        return raw.decode("utf-8")
+        return raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     except UnicodeDecodeError:
         return None
 

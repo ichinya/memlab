@@ -118,15 +118,25 @@ def test_ps1_joins_the_corpus_as_text(tmp_path):
     (tmp_path / "x.mjs").write_text("export const answer = () => 42;\n", encoding="utf-8")
     (tmp_path / "y.bin").write_bytes(b"\x00\x01")
     assert sorted(list_files(tmp_path, [], [], 400_000)) == ["run.ps1", "x.mjs"]
-    win = chunk_file("a.ps1", "para one\n\npara two\n")
+    win = chunk_file("a.ps1", "function Invoke-Task {}\n")
     assert len(win) == 1 and win[0].symbol == "" and win[0].id == "a.ps1"
 
 
 def test_bom_marked_files_decode_and_bad_encoding_is_skipped(tmp_path):
     from memlab.corpus import build
-    (tmp_path / "a.ps1").write_bytes("# PowerShell\n".encode("utf-16"))
+    (tmp_path / "a.ps1").write_bytes("# PowerShell\r\n".encode("utf-16"))
     (tmp_path / "b.md").write_bytes("# Title\n".encode("utf-8-sig"))
+    (tmp_path / "d.txt").write_bytes(b"\xff\xfe\x00\x00" + "ok\n".encode("utf-32-le"))
     (tmp_path / "c.txt").write_bytes(b"caf\xe9 menu")      # CP1252 bytes: not UTF-8, no BOM
     cs = build(tmp_path, [], [], 400_000)
-    assert [(c.path, c.text.splitlines()[0]) for c in cs] == [("a.ps1", "# PowerShell"),
-                                                              ("b.md", "# Title")]
+    assert sorted((c.path, c.text.splitlines()[0]) for c in cs) == [
+        ("a.ps1", "# PowerShell"), ("b.md", "# Title"), ("d.txt", "ok")]
+
+
+def test_cr_and_crlf_newlines_are_normalized(tmp_path):
+    from memlab.corpus import build
+    (tmp_path / "cr.py").write_bytes(b"class Alpha {}\rclass Bravo {}\r")
+    (tmp_path / "crlf.py").write_bytes(b"class Alpha {}\r\nclass Bravo {}\r\n")
+    cs = sorted((c.path, c.text) for c in build(tmp_path, [], [], 400_000))
+    assert cs == [("cr.py", "class Alpha {}\n"), ("cr.py", "class Bravo {}\n"),
+                  ("crlf.py", "class Alpha {}\n"), ("crlf.py", "class Bravo {}\n")]
